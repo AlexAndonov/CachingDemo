@@ -1,6 +1,7 @@
 
 using CachingDemo.Data;
 using CachingDemo.Services;
+using CachingDemo.Services.Caching;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,9 +20,13 @@ namespace CachingDemo
 					options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 			builder.Services.AddScoped<ProductService>();
+            builder.Services.AddScoped<ICacheService, RedisCacheService>();
 
-			builder.Services.AddMemoryCache();
-			
+            builder.Services.AddStackExchangeRedisCache(options =>
+			{
+				options.Configuration = "localhost:6379";
+				options.InstanceName = "CachingDemo_";
+			});
 
 			var app = builder.Build();
 

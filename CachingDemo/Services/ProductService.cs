@@ -1,56 +1,63 @@
 ﻿using CachingDemo.Common;
 using CachingDemo.Data;
 using CachingDemo.Models;
+using CachingDemo.Services.Caching;
 using Microsoft.AspNetCore.Razor.TagHelpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using System.Text.Json;
 
 namespace CachingDemo.Services
 {
 	public class ProductService
 	{
 		private readonly AppDbContext context;
-		private readonly IMemoryCache cache;
 		private readonly ILogger<ProductService> logger;
+		private readonly ICacheService cacheService;
 
-		public ProductService(AppDbContext _context, IMemoryCache _cache, ILogger<ProductService> _logger)
+		public ProductService(AppDbContext _context, ILogger<ProductService> _logger, ICacheService _cacheService)
 		{
 			context = _context;
-			cache = _cache;
 			logger = _logger;
+            cacheService = _cacheService;
 		}
 
 		public async Task<List<Product>> GetProducts()
 		{
-			var cacheKey = CacheKeys.Products;
+            var cachedProducts = await cacheService.GetAsync<List<Product>>(CacheKeys.Products);
 
-			if (cache.TryGetValue(cacheKey, out List<Product>? cachedProducts))
-			{
-				logger.LogInformation("CACHE HIT");
-				return cachedProducts;
-			}
+            if (cachedProducts != null)
+            {
+                logger.LogInformation("Cache HIT");
+                return cachedProducts;
+            }
 
-			logger.LogInformation("CACHE MISS - fetch data from database");
+            logger.LogInformation("Cache MISS");
 
-			var products = await context.Products.ToListAsync();
+            var products = await context.Products.ToListAsync();
 
-			var cacheOptions = new MemoryCacheEntryOptions()
-				.SetAbsoluteExpiration(TimeSpan.FromMinutes(5))
-				.SetSlidingExpiration(TimeSpan.FromMinutes(2));
+            var options = new DistributedCacheEntryOptions()
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5)
+            };
 
-			cache.Set(cacheKey, products, cacheOptions);
+            await cacheService.SetAsync(
+                    CacheKeys.Products,
+                    products,
+                    TimeSpan.FromMinutes(5));
 
-			return products;
-		}
+            return products;
+        }
 
 		public async Task Create(Product product)
 		{
 			await context.Products.AddAsync(product);
 			await context.SaveChangesAsync();
 
-			cache.Remove(CacheKeys.Products);
+            await cacheService.RemoveAsync(CacheKeys.Products);
 
-			logger.LogInformation("CACHE INVALIDATED - products");
+            logger.LogInformation("CACHE INVALIDATED - products");
 		}
 	}
 }
